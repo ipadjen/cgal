@@ -48,11 +48,14 @@ public:
 //  typedef Constant_property_map<vertex_descriptor, Principal_curvatures> Vertex_curvature_map;
 
   // try 2
-  typedef Constant_property_map<vertex_descriptor, Principal_curvatures_and_directions<K>> Default_principal_map;
-  typedef typename internal_np::Lookup_named_param_def<internal_np::vertex_principal_curvatures_and_directions_map_t,
-                                                       parameters::Default_named_parameters,
-                                                       Default_principal_map>::type
-                                                         Vertex_curvature_map;
+//  typedef Constant_property_map<vertex_descriptor, Principal_curvatures_and_directions<K>> Default_principal_map;
+//  typedef typename internal_np::Lookup_named_param_def<internal_np::vertex_principal_curvatures_and_directions_map_t,
+//                                                       parameters::Default_named_parameters,
+//                                                       Default_principal_map>::type
+//                                                         Vertex_curvature_map;
+
+   // try 3
+ typedef typename  CGAL::Surface_mesh<CGAL::Point_3<CGAL::Epick>>::Property_map<CGAL::SM_Vertex_index, CGAL::Polygon_mesh_processing::Principal_curvatures_and_directions<CGAL::Epick>> Vertex_curvature_map;
 
     Adaptive_sizing_field(const double tol
                         , const std::pair<FT, FT>& edge_len_min_max
@@ -63,6 +66,9 @@ public:
     , m_pmesh(pmesh)
   {
     m_vertex_sizing_map = get(Vertex_property_tag(), m_pmesh);
+    //todo ip - for rmse test
+    m_max_curv_map = get(Vertex_property_tag(), m_pmesh);
+    m_min_curv_map = get(Vertex_property_tag(), m_pmesh);
   }
 
 private:
@@ -80,6 +86,69 @@ private:
   }
 
 public:
+  /*
+   * Calculate RMSE for min, max curvature, and the sizing field
+   */
+  void calc_rmse()
+  {
+    //recalculate curvature
+    auto vertex_curvature_map =
+      m_pmesh.template add_property_map<vertex_descriptor, Principal_curvatures_and_directions<K>>(
+        "v:curvature_map").first;
+    interpolated_corrected_principal_curvatures_and_directions(m_pmesh
+                                                               , vertex_curvature_map);
+    FT rmse_max = 0;
+    FT rmse_min = 0;
+    FT rmse_sizing = 0;
+    FT sizing_max_sq = 0;
+    FT sizing_min_sq = 10e7;
+    FT mape_sizing = 0;
+    for (vertex_descriptor v: vertices(m_pmesh))
+    {
+//      CGAL_assertion(get(vertex_curvature_map, v));
+//      CGAL_assertion(get(m_calc_curv_map, v));
+      auto vertex_curv = get(vertex_curvature_map, v);
+
+      //calculate rmse here using the 'calculated' and 'current from sizing' curvature
+      rmse_max += CGAL::square(vertex_curv.max_curvature - get(m_max_curv_map, v));
+      rmse_min += CGAL::square(vertex_curv.min_curvature - get(m_min_curv_map, v));
+
+      //calculate sizing field for the new situation to find RMSE
+      const FT max_absolute_curv = CGAL::max(CGAL::abs(vertex_curv.max_curvature), CGAL::abs(vertex_curv.min_curvature));
+      FT vertex_size_sq = 6 * tol / max_absolute_curv - 3 * CGAL::square(tol);
+      if (vertex_size_sq > m_sq_long)
+        vertex_size_sq = m_sq_long;
+      else if (vertex_size_sq < m_sq_short)
+        vertex_size_sq = m_sq_short;
+      rmse_sizing += CGAL::square(CGAL::sqrt(vertex_size_sq) - CGAL::sqrt(get(m_vertex_sizing_map, v)));
+
+      //store data for normalization
+      if (vertex_size_sq > sizing_max_sq)
+        sizing_max_sq = vertex_size_sq;
+      if (vertex_size_sq < sizing_min_sq)
+        sizing_min_sq = vertex_size_sq;
+
+      //calcualte also mape
+      mape_sizing +=
+        CGAL::abs(CGAL::sqrt(vertex_size_sq) - CGAL::sqrt(get(m_vertex_sizing_map, v))) / CGAL::sqrt(vertex_size_sq);
+    }
+    rmse_max = sqrt(rmse_max / m_pmesh.vertices().size());
+    rmse_min = sqrt(rmse_min / m_pmesh.vertices().size());
+    rmse_sizing = sqrt(rmse_sizing / m_pmesh.vertices().size());
+    mape_sizing = mape_sizing / m_pmesh.vertices().size();
+
+    //normalise rmse
+    FT nrmse_sizing = rmse_sizing / (CGAL::sqrt(sizing_max_sq) - CGAL::sqrt(sizing_min_sq));
+//    FT nrmse_sizing = rmse_sizing / (CGAL::sqrt(m_sq_long) - CGAL::sqrt(m_sq_short));
+
+    //todo ip normalise
+    std::cout << "RMSE Max Curv: " << rmse_max << std::endl;
+    std::cout << "RMSE Min Curv: " << rmse_min << std::endl;
+    std::cout << "RMSE Sizing Field: " << rmse_sizing << std::endl;
+    std::cout << "NRMSE Sizing Field: " << nrmse_sizing << std::endl;
+    std::cout << "MAPE sizing field: " << mape_sizing << std::endl;
+  }
+
   void calc_sizing_map()
   {
 #ifdef CGAL_PMP_REMESHING_VERBOSE
@@ -98,10 +167,14 @@ public:
     interpolated_corrected_principal_curvatures_and_directions(m_pmesh
                                                                , vertex_curvature_map);
 
+
     // calculate square vertex sizing field (L(x_i))^2 from curvature field
     for(vertex_descriptor v : vertices(m_pmesh))
     {
-      auto vertex_curv = get(vertex_curvature_map, v);
+      auto vertex_curv = get(vertex_curvature_map, v); //todo ip: how to make this work?
+      put(m_max_curv_map, v, vertex_curv.max_curvature);//todo ip store curvature
+      put(m_min_curv_map, v, vertex_curv.min_curvature);//todo ip store curvature
+
       //todo ip: alt solution - calculate curvature per vertex
 //      const Principal_curvatures vertex_curv = interpolated_corrected_principal_curvatures_and_directions_one_vertex(m_pmesh, v);
       const FT max_absolute_curv = CGAL::max(CGAL::abs(vertex_curv.max_curvature), CGAL::abs(vertex_curv.min_curvature));
@@ -188,14 +261,25 @@ public:
     // calculating it as the average of two vertices on other ends
     // of halfedges as updating is done during an edge split
     FT vertex_size_sq = 0;
+    FT curv_max = 0;
+    FT curv_min = 0;
     CGAL_assertion(CGAL::halfedges_around_target(v, m_pmesh).size() == 2);
     for (halfedge_descriptor ha: CGAL::halfedges_around_target(v, m_pmesh))
     {
       vertex_size_sq += get(m_vertex_sizing_map, source(ha, m_pmesh));
+      //todo ip: also update curvature map
+      curv_max += get(m_max_curv_map, source(ha, m_pmesh));
+      curv_min += get(m_min_curv_map, source(ha, m_pmesh));
     }
     vertex_size_sq /= CGAL::halfedges_around_target(v, m_pmesh).size();
+    curv_max /= CGAL::halfedges_around_target(v, m_pmesh).size();
+    curv_min /= CGAL::halfedges_around_target(v, m_pmesh).size();
 
     put(m_vertex_sizing_map, v, vertex_size_sq);
+
+    //todo ip - store current curv property info
+    put(m_max_curv_map, v, curv_max);
+    put(m_min_curv_map, v, curv_min);
   }
 
   //todo ip: is_protected_constraint_too_long() from PR
@@ -206,6 +290,8 @@ private:
   const FT m_sq_long;
   PolygonMesh& m_pmesh;
   VertexSizingMap m_vertex_sizing_map;
+  VertexSizingMap m_max_curv_map;
+  VertexSizingMap m_min_curv_map;
 };
 
 }//end namespace Polygon_mesh_processing
