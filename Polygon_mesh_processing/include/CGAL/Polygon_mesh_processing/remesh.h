@@ -364,6 +364,7 @@ void isotropic_remeshing(const FaceRange& faces
 
     if (i < 2)
       sizing.calc_sizing_map();
+    sizing.calc_rmse();
     if(do_split)
      remesher.split_long_edges(sizing);
     if(do_collapse)
