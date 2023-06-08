@@ -355,16 +355,15 @@ void isotropic_remeshing(const FaceRange& faces
   t.reset(); t.start();
 #endif
 
-//      sizing.calc_sizing_map();
+      sizing.calc_sizing_map(faces);
   for (unsigned int i = 0; i < nb_iterations; ++i)
   {
 #ifdef CGAL_PMP_REMESHING_VERBOSE
     std::cout << " * Iteration " << (i + 1) << " *" << std::endl;
 #endif
 
-    if (i < 2)
-      sizing.calc_sizing_map();
-    sizing.calc_rmse();
+//    if (i < 2)
+//      sizing.calc_sizing_map(faces);
     if(do_split)
      remesher.split_long_edges(sizing);
     if(do_collapse)
