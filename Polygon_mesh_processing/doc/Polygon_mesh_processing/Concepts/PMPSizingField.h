@@ -39,7 +39,7 @@ typedef unspecified_type FT;
 /// @{
 
 /// a function that returns the sizing value at `v`.
-FT at(const vertex_descriptor v) const;
+FT get_sizing(const vertex_descriptor v) const;
 
 /// a function controlling edge split and edge collapse,
 /// returning the ratio of the current edge length and the local target edge length between

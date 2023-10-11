@@ -101,7 +101,7 @@ private:
   }
 
 public:
-  FT at(const vertex_descriptor /* v */) const
+  FT get_sizing(const vertex_descriptor /* v */) const
   {
     return m_size;
   }
